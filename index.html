@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>LED Pattern Preview</n  <style>
+  <title>LED Pattern Preview</title>
+  <style>
     body { margin:0; font-family:sans-serif; display:flex; height:100vh; }
     #controls { width:300px; padding:20px; background:#f4f4f4; box-shadow:2px 0 5px rgba(0,0,0,0.1); overflow-y:auto; }
     #controls label { margin-top:15px; display:block; font-weight:bold; }
@@ -138,11 +139,5 @@
     speedSlider.oninput = ()=>speedLabel.textContent = speedSlider.value+'×';
     startStop.onclick = ()=> running ? stop() : start();
   </script>
-</body>
-</html>""" 
-
-with open('/mnt/data/index.html','w') as f:
-    f.write(html_content)
-
-from ace_tools import display_file_to_user
-display_file_to_user(name="index.html
+  </body>
+  </html>
