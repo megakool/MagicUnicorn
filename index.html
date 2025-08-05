@@ -3,39 +3,48 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>LED Pattern Preview</title>
-  <style>
+  <title>LED Pattern Preview</n  <style>
     body { margin:0; font-family:sans-serif; display:flex; height:100vh; }
-    #controls { width:300px; padding:20px; background:#f4f4f4; box-shadow:2px 0 5px rgba(0,0,0,0.1); }
-    #controls label { margin-top:10px; display:block; }
+    #controls { width:300px; padding:20px; background:#f4f4f4; box-shadow:2px 0 5px rgba(0,0,0,0.1); overflow-y:auto; }
+    #controls label { margin-top:15px; display:block; font-weight:bold; }
     #controls select, #controls input[type=range], #controls button { width:100%; margin-top:5px; }
-    #preview { flex:1; position:relative; }
-    #timer { position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.7); padding:5px 10px; border-radius:4px; }
+    #controls #paletteSwatches { display:flex; margin-top:5px; }
+    #controls #paletteSwatches .swatch { flex:1; height:24px; border:1px solid #ccc; }
+    #controls #patternDesc { margin-top:5px; font-style:italic; color:#333; }
+    #controls #sliderTicks { display:flex; margin-top:5px; font-size:12px; color:#555; }
+    #controls #sliderTicks span { flex:1; text-align:center; }
+    #preview { flex:1; position:relative; background:#000; }
+    #timer { position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.7); padding:5px 10px; border-radius:4px; font-family:monospace; }
     canvas { width:100%; height:100%; display:block; }
   </style>
 </head>
 <body>
   <div id="controls">
-    <label>Color Palette:
-      <select id="paletteSelect">
-        <option>Pastel V1</option>
-        <option>Pastel V2</option>
-        <option>Rainbow V1</option>
-        <option>Rainbow V2</option>
-      </select>
-    </label>
-    <label>Pattern Mode:
-      <select id="modeSelect">
-        <option>Static</option>
-        <option>Breathing (one)</option>
-        <option>Breathing (multi)</option>
-        <option>Crossfade</option>
-      </select>
-    </label>
-    <label>Speed:
-      <input id="speedSlider" type="range" min="0.2" max="5" step="0.6" value="1">
-      <div id="speedLabel">1×</div>
-    </label>
+    <label for="paletteSelect">Color Palette:</label>
+    <select id="paletteSelect">
+      <option>Pastel V1</option>
+      <option>Pastel V2</option>
+      <option>Rainbow V1</option>
+      <option>Rainbow V2</option>
+    </select>
+    <div id="paletteSwatches"></div>
+
+    <label for="modeSelect">Pattern Mode:</label>
+    <select id="modeSelect">
+      <option>Static</option>
+      <option>Breathing (one)</option>
+      <option>Breathing (multi)</option>
+      <option>Crossfade</option>
+    </select>
+    <div id="patternDesc"></div>
+
+    <label for="speedSlider">Speed:</label>
+    <input id="speedSlider" type="range" min="0.2" max="5" step="0.6" value="1">
+    <div id="sliderTicks">
+      <span>Very Slow</span><span></span><span>Slow</span><span></span><span>Average</span><span></span><span>Fast</span><span></span><span>Very Fast</span>
+    </div>
+    <div id="speedLabel">1×</div>
+
     <button id="startStop">START</button>
   </div>
   <div id="preview">
@@ -49,51 +58,91 @@
       "Rainbow V1": [[255,0,0],[255,127,0],[255,255,0],[0,255,0],[0,0,255],[139,0,255]],
       "Rainbow V2": [[255,204,0],[255,149,0],[255,59,48],[175,82,222],[0,122,255],[52,199,73]]
     };
+    const descriptions = {
+      "Static": "Hold a single random color from the palette.",
+      "Breathing (one)": "Fade one chosen color in and out.",
+      "Breathing (multi)": "Fade each palette color in and out sequentially.",
+      "Crossfade": "Smoothly transition through all colors once."
+    };
     let duration=15000, fadeOut=1000, interval=40;
     let totalSteps = duration/interval, fadeSteps=fadeOut/interval;
-    let canvas = document.getElementById('ledCanvas'), ctx = canvas.getContext('2d');
-    let paletteSelect=document.getElementById('paletteSelect'), modeSelect=document.getElementById('modeSelect');
-    let speedSlider=document.getElementById('speedSlider'), speedLabel=document.getElementById('speedLabel');
-    let toggleBtn=document.getElementById('startStop'), timerDiv=document.getElementById('timer');
+    const canvas = document.getElementById('ledCanvas'), ctx = canvas.getContext('2d');
+    const paletteSelect=document.getElementById('paletteSelect'), modeSelect=document.getElementById('modeSelect');
+    const speedSlider=document.getElementById('speedSlider'), speedLabel=document.getElementById('speedLabel');
+    const startStop=document.getElementById('startStop'), timerDiv=document.getElementById('timer');
+    const swatchContainer=document.getElementById('paletteSwatches');
+    const patternDescDiv=document.getElementById('patternDesc');
     canvas.width=canvas.clientWidth; canvas.height=canvas.clientHeight;
-    let running=false, step=0, baseColor=[255,255,255], currentSpeed=1;
-    function toHex(c){return '#' + c.map(v=>v.toString(16).padStart(2,'0')).join('');}
+    let running=false, step=0, baseColor=[255,255,255], currentSpeed=1, intervalId;
+
+    function toHex(c){ return '#' + c.map(v=>v.toString(16).padStart(2,'0')).join(''); }
+
+    function updateSwatches(){
+      const pal = palettes[paletteSelect.value] || [];
+      swatchContainer.innerHTML = '';
+      pal.forEach(c => {
+        const div=document.createElement('div');
+        div.className='swatch'; div.style.background=toHex(c);
+        swatchContainer.appendChild(div);
+      });
+    }
+
+    function updateDescription(){
+      patternDescDiv.textContent = descriptions[modeSelect.value] || '';
+    }
+
     function drawFrame(){
-      let frac = step/totalSteps;
+      const frac = step/totalSteps;
       let color=[0,0,0];
-      let pal=palettes[paletteSelect.value], n=pal.length;
-      if(modeSelect.value==='Static') color=baseColor;
-      else if(modeSelect.value==='Breathing (one)'){
-        if(step===0) baseColor=pal[Math.floor(Math.random()*n)];
-        let phase=(frac*currentSpeed*2)%2; if(phase>1)phase=2-phase;
+      const pal = palettes[paletteSelect.value], n = pal.length;
+      if(modeSelect.value==='Static'){
+        color=baseColor;
+      } else if(modeSelect.value==='Breathing (one)'){
+        if(step===0) baseColor = pal[Math.floor(Math.random()*n)];
+        let phase=(frac*currentSpeed*2)%2; if(phase>1) phase=2-phase;
         color=baseColor.map(c=>c*phase);
       } else if(modeSelect.value==='Breathing (multi)'){
-        let total=frac*currentSpeed*n;
-        let idx=Math.floor(total)%n;
-        let local=total-Math.floor(total);
-        let phase=local*2; if(phase>1)phase=2-phase;
-        color=pal[idx].map(c=>c*phase);
+        let total = frac*currentSpeed*n;
+        let idx = Math.floor(total)%n;
+        let local = total - Math.floor(total);
+        let phase = local*2; if(phase>1) phase=2-phase;
+        color = pal[idx].map(c=>c*phase);
       } else if(modeSelect.value==='Crossfade'){
-        let total=frac*n;
-        let i=Math.floor(total), blend=total-i;
-        let c1=pal[i%n],c2=pal[(i+1)%n];
-        color=c1.map((c,k)=>c*(1-blend)+c2[k]*blend);
+        let total = frac*n;
+        let i = Math.floor(total), blend = total - i;
+        let c1 = pal[i%n], c2 = pal[(i+1)%n];
+        color = c1.map((c,k)=>c*(1-blend)+c2[k]*blend);
       }
-      if(step>totalSteps-fadeSteps){let o=(step-(totalSteps-fadeSteps))/fadeSteps; color=color.map(c=>c*(1-o));}
+      if(step>totalSteps-fadeSteps){ let o=(step-(totalSteps-fadeSteps))/fadeSteps; color=color.map(c=>c*(1-o)); }
       ctx.fillStyle=toHex(color.map(Math.round)); ctx.fillRect(0,0,canvas.width,canvas.height);
-      let rem = ((totalSteps-step)*interval/1000).toFixed(1)+'s'; timerDiv.textContent=rem;
-      step++; if(step>totalSteps) return stop();
+      timerDiv.textContent = ((totalSteps-step)*interval/1000).toFixed(1) + 's';
+      step++; if(step>totalSteps) stop();
     }
+
     function start(){
-      currentSpeed=parseFloat(speedSlider.value);
-      step=0; running=true; toggleBtn.textContent='STOP';
+      currentSpeed = parseFloat(speedSlider.value);
+      baseColor = palettes[paletteSelect.value][Math.floor(Math.random()*palettes[paletteSelect.value].length)];
+      step = 0; running=true; startStop.textContent='STOP';
       paletteSelect.disabled=modeSelect.disabled=speedSlider.disabled=true;
       timerDiv.textContent=(duration/1000).toFixed(1)+'s';
-      intervalId=setInterval(drawFrame, interval);
+      intervalId = setInterval(drawFrame, interval);
     }
-    function stop(){ clearInterval(intervalId); running=false; toggleBtn.textContent='START'; paletteSelect.disabled=modeSelect.disabled=speedSlider.disabled=false; }
-    speedSlider.oninput=()=>speedLabel.textContent=speedSlider.value+'×';
-    toggleBtn.onclick=()=>running?stop():start();
+
+    function stop(){ clearInterval(intervalId); running=false; startStop.textContent='START';
+      paletteSelect.disabled=modeSelect.disabled=speedSlider.disabled=false; }
+
+    // Init
+    updateSwatches(); updateDescription();
+    paletteSelect.onchange = updateSwatches;
+    modeSelect.onchange = updateDescription;
+    speedSlider.oninput = ()=>speedLabel.textContent = speedSlider.value+'×';
+    startStop.onclick = ()=> running ? stop() : start();
   </script>
 </body>
-</html>
+</html>""" 
+
+with open('/mnt/data/index.html','w') as f:
+    f.write(html_content)
+
+from ace_tools import display_file_to_user
+display_file_to_user(name="index.html
